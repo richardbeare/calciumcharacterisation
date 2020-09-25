@@ -45,8 +45,9 @@ import calciumcharacterisation as cc
 import napari
 
 def run_cli(args):
+    print(args.imarispath[0])
     files = glob.glob(os.path.join(args.imarispath[0], "*.ims"))
-
+    print(files)
     def onego(se):
         ifile = se.GetFile()
         csvname = re.sub("\\.ims$", ".csv", ifile)
