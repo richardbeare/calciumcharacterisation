@@ -22,6 +22,7 @@ setup(
     install_requires=["h5py",
                       "napari",
                       "pandas",
+                      "scikit-image",
                       "SimpleITK>=1.2.0"],
     entry_points={'console_scripts': ['iv = calciumcharacterisation.iv:viewer',
                                       'calcium = calciumcharacterisation.seg:calcium']}
