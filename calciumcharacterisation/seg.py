@@ -53,21 +53,24 @@ def run_cli(args):
         csvname = re.sub("\\.ims$", ".csv", ifile)
         pngname1 = re.sub("\\.ims$", "_marker.png", ifile)
         pngname2 = re.sub("\\.ims$", "_seg.png", ifile)
-
-        res = cc.oneSeries(se, verbose = True)
-        res['TimeData'].to_csv(csvname)
-        marker = sitk.GetArrayViewFromImage(res['marker'])
-        seg = sitk.GetArrayViewFromImage(res['seg'])
-        rr = sitk.Cast(sitk.IntensityWindowing(res['input'], 0, 1000, 0, 255), sitk.sitkUInt8)
-        inp = sitk.GetArrayViewFromImage(rr)
-        
-        ov1 = 255*label2rgb(marker, inp, bg_label=int(0))
-        ov1 = ov1.astype(np.uint8)
-        imsave(pngname1, ov1)
-        ov1 = 255*label2rgb(seg, inp, bg_label=int(0))
-        ov1 = ov1.astype( np.uint8)
-        imsave(pngname2, ov1)
-        
+        try:
+            res = cc.oneSeries(se, verbose = True)
+            res['TimeData'].to_csv(csvname)
+            marker = sitk.GetArrayViewFromImage(res['marker'])
+            seg = sitk.GetArrayViewFromImage(res['seg'])
+            rr = sitk.Cast(sitk.IntensityWindowing(res['input'], 0, 1000, 0, 255), sitk.sitkUInt8)
+            inp = sitk.GetArrayViewFromImage(rr)
+            
+            ov1 = 255*label2rgb(marker, inp, bg_label=int(0))
+            ov1 = ov1.astype(np.uint8)
+            imsave(pngname1, ov1)
+            ov1 = 255*label2rgb(seg, inp, bg_label=int(0))
+            ov1 = ov1.astype( np.uint8)
+            imsave(pngname2, ov1)
+        except Exception as inst:
+            ex, dat = inst.args
+            print("Exception in ", ex, dat, ", skipping\n")
+            
     IS = [cc.LazyImarisTSReader(fl) for fl in files]
     [onego(x) for x in IS]
     

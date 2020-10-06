@@ -137,20 +137,49 @@ def WatershedSeg(image, marker, gradsize):
     seg = sitk.MorphologicalWatershedFromMarkers(gradient, marker, False, False)
     return(seg, gradient)
 
-def runShapeAttributeFilter(labelimage, fn, NewVal=1):
+def runShapeAttributeFilter(labelimage, fn1, fn2, NewVal=1):
+    # fn1 discards based on area
+    # discarding based on area is probably redundant, if we
+    # use the idea of keeping the largest N
+    # fn2 discards based on position (too close to top or bottom)
     shapefilt = sitk.LabelShapeStatisticsImageFilter()
     shapefilt.Execute(labelimage)
     alllabels = shapefilt.GetLabels()
     allsizes = [shapefilt.GetNumberOfPixels(idx) for idx in alllabels]
+    allcentroids = [shapefilt.GetCentroid(idx) for idx in alllabels]
+    allcentroids = [labelimage.TransformPhysicalPointToIndex(cent) for cent in allcentroids]
     labelmap = dict()
     for i in range(len(alllabels)):
         newval = NewVal
-        if fn(allsizes[i]):
+        if fn1(allsizes[i]):
+            newval = 0
+        elif fn2(allcentroids[i]):
             newval = 0
         labelmap[ alllabels[i] ] = newval
     labelimage = sitk.ChangeLabel(labelimage, labelmap)
     return labelimage
 
+def keepLargestN(binaryimage, N, NewVal = 1):
+    labelimage = sitk.ConnectedComponent(binaryimage)
+    shapefilt = sitk.LabelShapeStatisticsImageFilter()
+    shapefilt.Execute(labelimage)
+    alllabels = shapefilt.GetLabels()
+    allsizes = [shapefilt.GetNumberOfPixels(idx) for idx in alllabels]
+    objs = dict(zip(alllabels, allsizes))
+    objs = sorted(objs.items(), key=lambda item: item[1], reverse=True)
+    if len(objs) < N:
+        print("Not enough objects")
+        raise Exception("keepLargestN", (len(objs), N))
+    labelmap = dict()
+    for i in range(len(objs)):
+        label = objs[i][0]
+        if i < N:
+            labelmap[label] = NewVal
+        else:
+            labelmap[label] = 0
+    labelimage = sitk.ChangeLabel(labelimage, labelmap)
+    return labelimage
+    
 def registerPosts(newpost, moving=templateposts):
     # New version using landmarks, which will be the
     # outer corners of the post
@@ -159,13 +188,16 @@ def registerPosts(newpost, moving=templateposts):
         shapefilt = sitk.LabelShapeStatisticsImageFilter()
         shapefilt.Execute(labelimage)
         alllabels = shapefilt.GetLabels()
+        if len(alllabels) != 2:
+            print("wrong number of blobs")
+            raise Exception("registerPosts", len(alllabels))
         allboxes = [shapefilt.GetBoundingBox(idx) for idx in alllabels]
         allcentroids = [shapefilt.GetCentroid(idx) for idx in alllabels]
         # bounding boxes are xstart, ystart, xsize, ysize
         # figure out the index of the left and right blobs
         leftobj = 0
         rightobj = 1
-        if allcentroids[0][0] > allcentroids[0][1]:
+        if allcentroids[0][0] > allcentroids[1][0]:
             leftobj = 1
             rightobj = 0
         # feature list topleft, bottomleft, topright, bottomright
@@ -189,16 +221,33 @@ def registerPosts(newpost, moving=templateposts):
     
 def mkMarkers2(img, postsize=5000):
     # posts
+    # I originally used an area filter, then
+    # added position.
+    # Finally I added a keepLargestN filter,
+    # which makes the first area filter somewhat
+    # redundant, however I haven't thrown it away.
+    # It may be useful to discard candidates that are too
+    # big, but I haven't seen this yet.
     def AttributeSelector(val):
         return val < postsize
 
+    def PositionSelector(centroid):
+        sz = img.GetSize()
+        ysz = sz[1]
+        ypos = centroid[1]
+        discard = (ypos < ysz/4) | (ypos > 3*ysz/4)
+        if discard:
+            print("Discarding ", centroid)
+        return discard
+    
     op =  sitk.GrayscaleMorphologicalOpening(img, (15,15), sitk.sitkBox)
     bth = sitk.BlackTopHat(op, (100, 100), sitk.sitkBox)
     posts = sitk.OtsuThreshold(bth, 0, 1)
     posts = sitk.GrayscaleErode(posts, (10,10), sitk.sitkBox)
     # keep markers above a certain size
     posts = sitk.ConnectedComponent(posts)
-    posts = runShapeAttributeFilter(posts, AttributeSelector, NewVal = 3)
+    posts = runShapeAttributeFilter(posts, AttributeSelector, PositionSelector, NewVal = 3)
+    posts = keepLargestN(posts, 2, NewVal = 3)
     posts = sitk.Cast(posts, sitk.sitkUInt8)
     ## Now that we have the posts we'll use registration to transform
     ## a hand drawn marker 
@@ -235,7 +284,7 @@ def oneSeries(Ls, verbose=False):
     img = Ls.sitkInfo(img)
     # drop dimension
     img = img[:,:,0]
-    mk = mkMarkers2(img)
+    mk = mkMarkers2(img, 100)
     imgfilt = sitk.ReconstructionByDilation(sitk.Mask(img, mk['reconmarker']), img)
     seg = WatershedSeg(imgfilt, mk['wsmarker'], 5)
 
