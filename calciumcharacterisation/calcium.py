@@ -25,6 +25,8 @@ class LazyImarisTSReader:
         self._timepoint = "TimePoint 0"
         self._filename = filename_imaris
         self.__imparams__()
+        self._starttime = None
+        self._sampletimes = None
         
     def __imparams__(self):
         group = self._file_object['/DataSet/' + self._resolution]
@@ -41,10 +43,11 @@ class LazyImarisTSReader:
         a = ['ExtMax0', 'ExtMax1', 'ExtMax2']
         self._extent = [ float(self._file_object[p].attrs[i].tobytes()) for i in a]
         p = '/DataSetTimes/'
-        self._starttime = self._file_object[p+"TimeBegin"][0][0]
-        # sample times is an array of tuples for "ID", "Birth", "Death", "IDTimeBegin"
-        self._sampletimes = self._file_object[p+"Time"][()]
-        
+        if len(self._file_object[p]) > 0 :
+            self._starttime = self._file_object[p+"TimeBegin"][0][0]
+            # sample times is an array of tuples for "ID", "Birth", "Death", "IDTimeBegin"
+            self._sampletimes = self._file_object[p+"Time"][()]
+            
     def set_path(self, filename_imaris):
         """Set the file path to HDF5 file. If another file was already open, 
         it closes it before proceeding
