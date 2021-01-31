@@ -12,14 +12,20 @@ import os.path
 import napari
 import pandas as pd
 import pkg_resources
+import numpy as np
 
-class LazyImarisTSReader:
-    def __init__(self, filename_imaris):
+import skimage as ski
+import skimage.filters as skif
+
+from dask.diagnostics import ProgressBar
+
+class LazyImarisTS:
+    def __init__(self, filename_imaris, mode='r'):
         """Class for reading an imaris file with single channel time series
             filename_imaris: (string), full path to a HDF5 file (default None).
         """
         assert os.path.exists(filename_imaris), "Error: HDF5 file not found"
-        self._file_object = h5py.File(filename_imaris, 'r')
+        self._file_object = h5py.File(filename_imaris, mode)
         self._resolution = "ResolutionLevel 0"
         self._channel = "Channel 0"
         self._timepoint = "TimePoint 0"
@@ -56,6 +62,15 @@ class LazyImarisTSReader:
         if self._file_object:
             self._file_object.close()
         self._file_object = h5py.File(filename_imaris, 'r')
+
+        
+    def printDataPaths(self):
+        datasetnames = list()
+        prf = '/DataSet/'
+        self._file_object[prf].visit(datasetnames.append)
+        tt = [type(self._file_object[prf + '/' + x]) == h5py._hl.dataset.Dataset for x in datasetnames]
+        res = list(compress(datasetnames, tt))
+        print(res)
 
     def close(self):
         """Close the file object."""
@@ -112,6 +127,148 @@ class LazyImarisTSReader:
         stack.shape  # (nfiles, nz, ny, nx)
         return stack
 
+###################################################################
+
+class LazyImarisTSReader(LazyImarisTS):
+    def __init__(self, filename_imaris):
+        super().__init__(filename_imaris, mode='r')
+
+###################################################################
+
+from itertools import compress
+        
+class LazyImarisTSReaderWriter(LazyImarisTS):
+    def __init__(self, filename_imaris):
+        super().__init__(filename_imaris, mode='r+')
+
+    def mysmoother(self, daskchunk):
+        sigma=()
+        for k in range(len(self._subdiv)):
+            if self._subdiv[k] == 1:
+                sigma += (0,)
+            else:
+                sigma += (2/3.0,)
+                
+        #print(daskchunk.shape)
+        #print(sigma)
+        smoothed = skif.gaussian(daskchunk, sigma, mode='reflect', cval = 0, preserve_range = True)
+        smoothed = smoothed.astype(daskchunk.dtype)
+        return smoothed
+
+    def myresize(self, img):
+        sh = img.shape
+        slices = sh[0]
+        rows = sh[1]
+        cols = sh[2]
+        
+        out_slices = np.ceil(slices/float(self._subdiv[0]))
+        out_rows = np.ceil(rows/float(self._subdiv[1]))
+        out_cols = np.ceil(cols/float(self._subdiv[2]))
+        res = ski.transform.resize(img, (out_slices, out_rows, out_cols), order = 0, preserve_range=True, mode = 'reflect', cval = 0)
+        res = res.astype(img.dtype)
+        return res
+
+    def chunkstuff(self, axislength, chunksize):
+        # force chunk size to something decent
+        # always use all slices
+        while chunksize < 512:
+            chunksize *=2
+        c = axislength // chunksize
+        d = axislength % chunksize
+        return (chunksize,) * c + (d,)
+
+    def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
+        # Use whatever chunk size that imaris has used
+        chunkshape = hdf5obj[imagepathin].chunks
+        imshape =  hdf5obj[imagepathin].shape
+        aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
+        dtp =  hdf5obj[imagepathin].dtype
+        #print("Image shape",  imshape)
+        subsamp = self._subdiv
+        # imaris appears to do z,y,x - only subsample x and y...
+        daskimg = da.from_array(hdf5obj[imagepathin], chunks=aa)
+        #blurred = daskimg.map_overlap(mysmoother2, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
+        blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
+        #d2 = (np.ceil(np.array(chunkshape)/2.0)).astype(int)
+        dz = tuple(np.ceil(np.array(aa[0])/float(subsamp[0])).astype(int))
+        dy = tuple(np.ceil(np.array(aa[1])/float(subsamp[1])).astype(int))
+        dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
+        #downsamp = blurred.map_blocks(resample, dtype = dtp, chunks = (dz, dy, dx))
+        downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
+        self.to_hdf5(hdf5obj, imagepathout, downsamp)
+
+        
+    def to_hdf5(self, f, *args, **kwargs):
+        """Store arrays in HDF5 file
+            
+        This saves several dask arrays into several datapaths in an HDF5 file.
+        It creates the necessary datasets and handles clean file opening/closing.
+            
+        >>> da.to_hdf5('myfile.hdf5', '/x', x)  # doctest: +SKIP
+            
+        or
+            
+        >>> da.to_hdf5('myfile.hdf5', {'/x': x, '/y': y})  # doctest: +SKIP
+
+        Optionally provide arguments as though to ``h5py.File.create_dataset``
+            
+        >>> da.to_hdf5('myfile.hdf5', '/x', x, compression='lzf', shuffle=True)  # doctest: +SKIP
+            
+        This can also be used as a method on a single Array
+            
+        >>> x.to_hdf5('myfile.hdf5', '/x')  # doctest: +SKIP
+            
+        See Also
+        --------
+        da.store
+        h5py.File.create_dataset
+        """
+        if len(args) == 1 and isinstance(args[0], dict):
+            data = args[0]
+        elif len(args) == 2 and isinstance(args[0], str) and isinstance(args[1], da.Array):
+            data = {args[0]: args[1]}
+        else:
+            raise ValueError("Please provide {'/data/path': array} dictionary")
+
+        chunks = kwargs.pop("chunks", True)
+        
+        dsets = [
+            f.require_dataset(
+                dp,
+                shape=x.shape,
+                dtype=x.dtype,
+                chunks=tuple([c[0] for c in x.chunks]) if chunks is True else chunks,
+                **kwargs,
+            )
+            for dp, x in data.items()
+        ]
+        da.store(list(data.values()), dsets)
+
+    def createPyramidLevel(self, resolution = 0, subdiv = (1, 2, 2)):
+        """ Add a level in a multi-level pyramid.
+            Provided this function because TeraStitcher does
+            not have enough control over the sampling strategy for imaris files
+        """
+        # find all of the imaris datasets under the specified resolution group
+        self._subdiv = subdiv
+        datasetnames = list()
+        resin = 'ResolutionLevel ' + str(resolution)
+        resout =  'ResolutionLevel ' + str(resolution + 1)
+        prf = '/DataSet/' + resin
+        self._file_object[prf].visit(datasetnames.append)
+        tt = [type(self._file_object[prf + '/' + x]) == h5py._hl.dataset.Dataset for x in datasetnames]
+        res = list(compress(datasetnames, tt))
+        # Now we need to find the ones ending in '/Data'
+        tt = [x.endswith('/Data') for x in res]
+        res = list(compress(res, tt))
+        outpaths = ['/DataSet/' + resout + '/' + x for x in res]
+        inpaths = [prf + '/' + x for x in res]
+        pbar = ProgressBar()
+        for idx in range(len(inpaths)):
+            print(inpaths[idx])
+            pbar.register()
+            self._subdivide(self._file_object, inpaths[idx], outpaths[idx])
+            pbar.unregister()
 
 ############################################
 # load my templates

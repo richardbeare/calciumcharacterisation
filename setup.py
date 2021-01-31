@@ -25,7 +25,8 @@ setup(
                       "scikit-image",
                       "SimpleITK>=1.2.0"],
     entry_points={'console_scripts': ['iv = calciumcharacterisation.iv:viewer',
-                                      'calcium = calciumcharacterisation.seg:calcium']}
+                                      'calcium = calciumcharacterisation.seg:calcium',
+                                      'pyramid = calciumcharacterisation.pyramid:pyramid']}
 
 )
 
