@@ -195,7 +195,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
         #downsamp = blurred.map_blocks(resample, dtype = dtp, chunks = (dz, dy, dx))
         downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
-        self.to_hdf5(hdf5obj, imagepathout, downsamp)
+        self.to_hdf5(hdf5obj, imagepathout, downsamp, compression='gzip')
 
         
     def to_hdf5(self, f, *args, **kwargs):
