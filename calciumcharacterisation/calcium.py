@@ -175,13 +175,19 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
             chunksize *=2
         c = axislength // chunksize
         d = axislength % chunksize
-        return (chunksize,) * c + (d,)
+        res = (chunksize,) * c
+        if d:
+           res = res  + (d,)
+        return res
 
     def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
         # Use whatever chunk size that imaris has used
         chunkshape = hdf5obj[imagepathin].chunks
+        print(chunkshape)
         imshape =  hdf5obj[imagepathin].shape
+        print(imshape)
         aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
+        print(aa)
         dtp =  hdf5obj[imagepathin].dtype
         #print("Image shape",  imshape)
         subsamp = self._subdiv
@@ -193,10 +199,27 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         dz = tuple(np.ceil(np.array(aa[0])/float(subsamp[0])).astype(int))
         dy = tuple(np.ceil(np.array(aa[1])/float(subsamp[1])).astype(int))
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
-        #downsamp = blurred.map_blocks(resample, dtype = dtp, chunks = (dz, dy, dx))
         downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
-        self.to_hdf5(hdf5obj, imagepathout, downsamp)
-
+        # histograms
+        mx = da.max(downsamp)
+        mn = da.max(downsamp)
+        mx=mx.compute()
+        mn=mn.compute()
+        print("Mx=", mx)
+        h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
+        #h=h.compute()
+        #print(h)
+        self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip")
+        # need to fix this - will break on windows
+        grouppath = os.path.dirname(imagepathout)
+        hdf5obj[grouppath].attrs['ImageSizeX']= str(downsamp.shape[2])
+        hdf5obj[grouppath].attrs['ImageSizeY']= str(downsamp.shape[1])
+        hdf5obj[grouppath].attrs['ImageSizeZ']= str(downsamp.shape[0])
+        hdf5obj[grouppath].attrs['HistogramMin']= str(mn)
+        hdf5obj[grouppath].attrs['HistogramMax']= str(mx)
+        print(imagepathout)
+        print(os.path.join(grouppath, 'Histogram'))
+        self.to_hdf5(hdf5obj, os.path.join(grouppath, 'Histogram'), h, compression="gzip")
         
     def to_hdf5(self, f, *args, **kwargs):
         """Store arrays in HDF5 file
