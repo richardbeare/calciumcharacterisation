@@ -9,6 +9,7 @@ import dask.array as da
 
 import re
 import os.path
+import posixpath
 import napari
 import pandas as pd
 import pkg_resources
@@ -183,11 +184,8 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
     def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
         # Use whatever chunk size that imaris has used
         chunkshape = hdf5obj[imagepathin].chunks
-        print(chunkshape)
         imshape =  hdf5obj[imagepathin].shape
-        print(imshape)
         aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
-        print(aa)
         dtp =  hdf5obj[imagepathin].dtype
         #print("Image shape",  imshape)
         subsamp = self._subdiv
@@ -205,23 +203,22 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         mn = da.max(downsamp)
         mx=mx.compute()
         mn=mn.compute()
-        print("Mx=", mx)
         h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
-        #h=h.compute()
-        #print(h)
-        self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip")
+        self.to_hdf5(hdf5obj, imagepathout, downsamp)
         # need to fix this - will break on windows
-        grouppath = os.path.dirname(imagepathout)
+        grouppath = posixpath.dirname(imagepathout)
         hdf5obj[grouppath].attrs['ImageSizeX']= str(downsamp.shape[2])
         hdf5obj[grouppath].attrs['ImageSizeY']= str(downsamp.shape[1])
         hdf5obj[grouppath].attrs['ImageSizeZ']= str(downsamp.shape[0])
         hdf5obj[grouppath].attrs['HistogramMin']= str(mn)
         hdf5obj[grouppath].attrs['HistogramMax']= str(mx)
-        print(imagepathout)
-        print(os.path.join(grouppath, 'Histogram'))
-        self.to_hdf5(hdf5obj, os.path.join(grouppath, 'Histogram'), h, compression="gzip")
+        self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
+
+    def to_hdf5(self, hdfobj, path, daskarray):
+        hdl = hdfobj.create_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip")
+        da.store(daskarray, hdl)
         
-    def to_hdf5(self, f, *args, **kwargs):
+    def xto_hdf5(self, f, *args, **kwargs):
         """Store arrays in HDF5 file
             
         This saves several dask arrays into several datapaths in an HDF5 file.
@@ -254,7 +251,6 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
             raise ValueError("Please provide {'/data/path': array} dictionary")
 
         chunks = kwargs.pop("chunks", True)
-        
         dsets = [
             f.require_dataset(
                 dp,
@@ -267,7 +263,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         ]
         da.store(list(data.values()), dsets)
 
-    def createPyramidLevel(self, resolution = 0, subdiv = (1, 2, 2)):
+    def createPyramidLevel(self, resolution = 0, subdiv = (1, 2, 2), quiet=False):
         """ Add a level in a multi-level pyramid.
             Provided this function because TeraStitcher does
             not have enough control over the sampling strategy for imaris files
@@ -288,10 +284,12 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         inpaths = [prf + '/' + x for x in res]
         pbar = ProgressBar()
         for idx in range(len(inpaths)):
-            print(inpaths[idx])
-            pbar.register()
+            if not quiet:
+                print(inpaths[idx])
+                pbar.register()
             self._subdivide(self._file_object, inpaths[idx], outpaths[idx])
-            pbar.unregister()
+            if not quiet:
+                pbar.unregister()
 
 ############################################
 # load my templates

@@ -48,6 +48,7 @@ parser.add_argument('--subdiv',
                     required=False,
                     default = [1,2,2])
 
+parser.add_argument('--quiet', dest='quiet', default=False, action='store_true')
 parser.add_argument('--resolution', type = int, required = True)
 args =  parser.parse_args()
 
@@ -56,7 +57,7 @@ import calciumcharacterisation
 def run_cli(args):
     subdiv = tuple(args.subdiv)
     LI = calciumcharacterisation.LazyImarisTSReaderWriter(args.imarispath)
-    LI.createPyramidLevel(args.resolution, subdiv)
+    LI.createPyramidLevel(args.resolution, subdiv, quiet=args.quiet)
     LI.close()
     LI = calciumcharacterisation.LazyImarisTSReader(args.imarispath)
     LI.printDataPaths()
