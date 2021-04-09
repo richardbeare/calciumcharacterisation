@@ -1,5 +1,4 @@
 import h5py
-import napari
 import dask
 from dask import delayed
 import dask.array as da
@@ -10,7 +9,6 @@ import dask.array as da
 import re
 import os.path
 import posixpath
-import napari
 import pandas as pd
 import pkg_resources
 import numpy as np
@@ -480,6 +478,7 @@ def oneSeries(Ls, verbose=False):
             'TimeData' : tdf}
 
 def showRes(imdsitk):
+    import napari
     imdsitk.pop('TimeData', None)
     imd = {key:sitk.GetArrayViewFromImage(value) for (key, value) in imdsitk.items()}
     viewer = napari.Viewer()
