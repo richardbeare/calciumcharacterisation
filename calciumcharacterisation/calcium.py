@@ -93,7 +93,7 @@ class LazyImarisTS:
 
     def GetSpacing(self):
         fov = [ self._extent[i] - self._origin[i] for i in range(len(self._origin)) ]
-        spacing = [ fov[i] / self._dimensions[i] for i in range(len(fov)) ]
+        spacing = [ fov[i] / float(self._dimensions[i]) for i in range(len(fov)) ]
         return spacing
 
     def GetTimeInfo(self):
@@ -107,10 +107,13 @@ class LazyImarisTS:
         szs = sitkim.GetSize()
         highestResSize = self._dimensions
         scalefactor = [float(szs[i])/float(highestResSize[i]) for i in range(len(szs))]
-        sitkim.SetOrigin(self.GetOrigin())
         sp = self.GetSpacing()
         newspacing = [sp[i] / scalefactor[i] for i in range(len(sp))]
+        og = self.GetOrigin()
+        # origin for ITK is the coordinate of the centre of the pixel
+        newog = [og[i] + newspacing[i]/2.0 for i in range(len(og))]
         sitkim.SetSpacing(newspacing)
+        sitkim.SetOrigin(newog)
         return sitkim
 
     def daskseries(self):
