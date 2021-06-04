@@ -105,8 +105,14 @@ class LazyImarisTS:
         return self._filename
     
     def sitkInfo(self, sitkim):
+        # Remember to scale the spacing
+        szs = sitkim.GetSize()
+        highestResSize = self._dimensions
+        scalefactor = [float(szs[i])/float(highestResSize[i]) for i in range(len(szs))]
         sitkim.SetOrigin(self.GetOrigin())
-        sitkim.SetSpacing(self.GetSpacing())
+        sp = self.GetSpacing()
+        newspacing = [sp[i] / scalefactor[i] for i in range(len(sp))]
+        sitkim.SetSpacing(newspacing)
         return sitkim
 
     def daskseries(self):
