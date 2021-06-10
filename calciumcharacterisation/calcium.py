@@ -62,6 +62,10 @@ class LazyImarisTS:
             self._file_object.close()
         self._file_object = h5py.File(filename_imaris, 'r')
 
+    def GetChannelNames(self):
+        channels = len(self._file_object['DataSet'].keys())
+        names = [ self._file_object['DataSetInfo/Channel ' + str(i)].attrs['Name'].tobytes() for i in range(channels)]
+        return names
         
     def printDataPaths(self):
         datasetnames = list()
