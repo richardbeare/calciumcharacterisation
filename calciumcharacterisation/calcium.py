@@ -32,6 +32,10 @@ class LazyImarisTS:
         self.__imparams__()
         self._starttime = None
         self._sampletimes = None
+
+    def __del__(self):
+        if self._file_object:
+            self._file_object.close()
         
     def __imparams__(self):
         group = self._file_object['/DataSet/' + self._resolution]
@@ -62,8 +66,15 @@ class LazyImarisTS:
             self._file_object.close()
         self._file_object = h5py.File(filename_imaris, 'r')
 
-    def GetChannelNames(self):
+    def GetChannels(self):
         channels = len(self._file_object['DataSet'].keys())
+        return channels
+
+    def GetResLevels(self):
+        return len(self._file_object['DataSet'])
+    
+    def GetChannelNames(self):
+        channels = self.GetChannels()
         names = [ self._file_object['DataSetInfo/Channel ' + str(i)].attrs['Name'].tobytes() for i in range(channels)]
         return names
         
