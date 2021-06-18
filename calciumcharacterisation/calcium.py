@@ -90,10 +90,14 @@ class LazyImarisTS:
         """Close the file object."""
         self._file_object.close()        
 
-    def imaris_tp(self, tp):
+    def imaris_tp(self, tp=0):
         path = '/DataSet/' + self._resolution + '/TimePoint ' + str(tp) + '/' + self._channel + '/Data'
-        im = self._file_object[path][()]
-        return(im)
+        #chunks = self._file_object[path].chunks
+        # Some data may be padding if the chunksize isn't a multiple
+        # of the image size
+        sz=self.GetSize()
+        im = self._file_object[path][0:sz[2], 0:sz[1], 0:sz[0]]
+        return im
 
     def SetChannel(self, ch):
         self._channel = "Channel " + str(ch)
@@ -109,13 +113,23 @@ class LazyImarisTS:
     def GetSpacing(self):
         fov = [ self._extent[i] - self._origin[i] for i in range(len(self._origin)) ]
         spacing = [ fov[i] / float(self._dimensions[i]) for i in range(len(fov)) ]
-        return spacing
+        return tuple(spacing)
 
     def GetTimeInfo(self):
         return self._sampletimes
 
     def GetFile(self):
         return self._filename
+
+    def GetSize(self):
+        path = '/DataSet/' + self._resolution + '/TimePoint 0/' + self._channel
+        a = ['ImageSizeX', 'ImageSizeY', 'ImageSizeZ']
+        sz = [ int(self._file_object[path].attrs[i].tobytes()) for i in a ]
+        return tuple(sz)
+
+    def GetShape(self):
+        sz = self.GetSize()
+        return sz[::-1]
     
     def sitkInfo(self, sitkim):
         # Remember to scale the spacing
