@@ -219,6 +219,8 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
 
     def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
         # Use whatever chunk size that imaris has used
+        # Not sure this is perfect - sometimes there are some redundant
+        # slices to pad out the chunk
         chunkshape = hdf5obj[imagepathin].chunks
         imshape =  hdf5obj[imagepathin].shape
         aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
@@ -243,11 +245,15 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         self.to_hdf5(hdf5obj, imagepathout, downsamp)
         # need to fix this - will break on windows
         grouppath = posixpath.dirname(imagepathout)
-        hdf5obj[grouppath].attrs['ImageSizeX']= str(downsamp.shape[2])
-        hdf5obj[grouppath].attrs['ImageSizeY']= str(downsamp.shape[1])
-        hdf5obj[grouppath].attrs['ImageSizeZ']= str(downsamp.shape[0])
-        hdf5obj[grouppath].attrs['HistogramMin']= str(mn)
-        hdf5obj[grouppath].attrs['HistogramMax']= str(mx)
+
+        def mkAttr(XX):
+            return np.frombuffer(str(XX).encode(), dtype='|S1')
+        
+        hdf5obj[grouppath].attrs['ImageSizeX']= mkAttr(downsamp.shape[2])
+        hdf5obj[grouppath].attrs['ImageSizeY']= mkAttr(downsamp.shape[1])
+        hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
+        hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
+        hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
         self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
 
     def to_hdf5(self, hdfobj, path, daskarray):
