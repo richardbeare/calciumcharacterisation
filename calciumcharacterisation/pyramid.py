@@ -18,6 +18,8 @@
 import os
 import argparse
 import sys
+from multiprocessing.pool import ThreadPool
+import dask
 
 def exception_handler(exception_type, exception, traceback):
     # All your trace are belong to us!
@@ -50,6 +52,7 @@ parser.add_argument('--subdiv',
 
 parser.add_argument('--quiet', dest='quiet', default=False, action='store_true')
 parser.add_argument('--resolution', type = int, required = True)
+parser.add_argument("--threads", type = int, required = False)
 args =  parser.parse_args()
 
 import calciumcharacterisation
@@ -64,6 +67,9 @@ def run_cli(args):
     
 def pyramid():
     args=parser.parse_args()
+    if args.threads is not None:
+        dask.config.set(pool=ThreadPool(args.threads))
+        
     sys.excepthook = exception_handler
 
     run_cli(args)
