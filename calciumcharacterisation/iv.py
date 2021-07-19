@@ -36,10 +36,9 @@ import napari
 def run_cli(args):
     LI = calciumcharacterisation.LazyImarisTSReader(args.imarisfile[0])
 
-    with napari.gui_qt():
-        v = napari.Viewer()
-        l = v.add_image(LI.daskseries(), multiscale=False, name=args.imarisfile[0])
-
+    v = napari.Viewer()
+    l = v.add_image(LI.daskseries(), multiscale=False, name=args.imarisfile[0])
+    napari.run()
 
 def viewer():
     args=parser.parse_args()
