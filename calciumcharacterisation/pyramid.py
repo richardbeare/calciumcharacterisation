@@ -18,7 +18,7 @@
 import os
 import argparse
 import sys
-from multiprocessing.pool import ThreadPool
+from concurrent.futures import ThreadPoolExecutor
 import dask
 
 def exception_handler(exception_type, exception, traceback):
@@ -67,8 +67,11 @@ def run_cli(args):
     
 def pyramid():
     args=parser.parse_args()
+    dask.config.set(scheduler='single-threaded')
     if args.threads is not None:
-        dask.config.set(pool=ThreadPool(args.threads))
+        print("Setting threads to " + str(args.threads)) 
+        dask.config.set(scheduler='threaded')
+        dask.config.set(pool=ThreadPoolExecutor(args.threads))
         
     sys.excepthook = exception_handler
 
