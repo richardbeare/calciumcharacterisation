@@ -20,6 +20,7 @@ import argparse
 import sys
 from concurrent.futures import ThreadPoolExecutor
 import dask
+import dask.multiprocessing
 
 def exception_handler(exception_type, exception, traceback):
     # All your trace are belong to us!
@@ -67,6 +68,7 @@ def run_cli(args):
     
 def pyramid():
     args=parser.parse_args()
+    print("Detected cores = " + str(dask.multiprocessing.CPU_COUNT))
     dask.config.set(scheduler='single-threaded')
     if args.threads is not None:
         print("Setting threads to " + str(args.threads)) 
