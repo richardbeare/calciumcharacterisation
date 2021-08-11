@@ -21,6 +21,10 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 import dask
 import dask.multiprocessing
+import tempfile
+from dask.cache import Cache
+#from dask.distributed import Client, LocalCluster
+
 
 def exception_handler(exception_type, exception, traceback):
     # All your trace are belong to us!
@@ -37,6 +41,15 @@ def is_readable_file(parser, arg):
     
     return(arg)
 
+
+def is_writeable_path(parser, arg):
+    try:
+        testfile = tempfile.TemporaryFile(dir=arg)
+        testfile.close()
+    except:
+        raise argparse.ArgumentTypeError("{0} does not exist or is not writable".format(arg))
+    
+    return(arg)
 
 parser = argparse.ArgumentParser(description='Create an image pyramid in imaris file.')
 
@@ -69,12 +82,26 @@ def run_cli(args):
 def pyramid():
     args=parser.parse_args()
     print("Detected cores = " + str(dask.multiprocessing.CPU_COUNT))
-    dask.config.set(scheduler='single-threaded')
+    #cache = Cache(4e9)
+    #cache.register()
     if args.threads is not None:
-        print("Setting threads to " + str(args.threads)) 
-        dask.config.set(scheduler='threaded')
-        dask.config.set(pool=ThreadPoolExecutor(args.threads))
-        
+        #print("Setting threads to " + str(args.threads))
+        #cluster = LocalCluster(n_workers = 1,
+        #                       processes = False,
+        #                       threads_per_worker = args.threads,
+        #                       local_directory = args.tempdir,
+        #                       memory_limit = '4GB',
+        #                       scheduler_port = 0, # random port to avoid clashes some of the time
+        #                       worker_dashboard_address = None)
+        #client = Client(cluster)
+        #print(client)
+        pool = ThreadPoolExecutor(args.threads)
+        dc = dask.config.set(pool=pool, scheduler='threads')
+        print(pool)
+        print(dc.config)
+    else:
+        dask.config.set(scheduler='single-threaded')
+
     sys.excepthook = exception_handler
 
     run_cli(args)

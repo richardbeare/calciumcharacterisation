@@ -205,6 +205,19 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         res = res.astype(img.dtype)
         return res
 
+    def noresize(self, img):
+        sh = img.shape
+        slices = sh[0]
+        rows = sh[1]
+        cols = sh[2]
+        
+        out_slices = np.ceil(slices/float(self._subdiv[0]))
+        out_rows = np.ceil(rows/float(self._subdiv[1]))
+        out_cols = np.ceil(cols/float(self._subdiv[2]))
+        #res = ski.transform.resize(img, (out_slices, out_rows, out_cols), order = 0, preserve_range=True, mode = 'reflect', cval = 0)
+        #res = res.astype(img.dtype)
+        return img
+
     def chunkstuff(self, axislength, chunksize):
         # force chunk size to something decent
         # always use all slices
@@ -227,24 +240,28 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         dtp =  hdf5obj[imagepathin].dtype
         #print("Image shape",  imshape)
         subsamp = self._subdiv
+
         # imaris appears to do z,y,x - only subsample x and y...
         daskimg = da.from_array(hdf5obj[imagepathin], chunks=aa)
         #blurred = daskimg.map_overlap(mysmoother2, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
-        blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
+        #blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
         #d2 = (np.ceil(np.array(chunkshape)/2.0)).astype(int)
         dz = tuple(np.ceil(np.array(aa[0])/float(subsamp[0])).astype(int))
         dy = tuple(np.ceil(np.array(aa[1])/float(subsamp[1])).astype(int))
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
-        downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
+
+        #downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
+        #downsamp = daskimg.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
+        #downsamp = daskimg.map_blocks(self.noresize, dtype = dtp)
+        
         # histograms
-        mx = da.max(downsamp)
-        mn = da.max(downsamp)
-        mx=mx.compute()
-        mn=mn.compute()
-        h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
-        self.to_hdf5(hdf5obj, imagepathout, downsamp)
+        #mx, mn = dask.compute(downsamp.max(), downsamp.min())
+        #h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
+        #downsamp.visualize(filename='ds.svg')
+        
+        self.to_hdf5(hdf5obj, imagepathout, daskimg)
         # need to fix this - will break on windows
-        grouppath = posixpath.dirname(imagepathout)
+        #grouppath = posixpath.dirname(imagepathout)
 
         def mkAttr(XX):
             return np.frombuffer(str(XX).encode(), dtype='|S1')
@@ -252,13 +269,19 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeX']= mkAttr(downsamp.shape[2])
         hdf5obj[grouppath].attrs['ImageSizeY']= mkAttr(downsamp.shape[1])
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
-        hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
-        hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
-        self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
+        #hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
+        #hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
+        #self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
 
     def to_hdf5(self, hdfobj, path, daskarray):
-        hdl = hdfobj.create_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip")
-        da.store(daskarray, hdl)
+        print(daskarray.chunks)
+        print(daskarray.dtype)
+        hdl = hdfobj.require_dataset( path,
+                                      shape=daskarray.shape,
+                                      dtype=daskarray.dtype,
+                                      chunks = tuple([c[0] for c in daskarray.chunks])
+                                      )
+        daskarray.store(hdl)
         
     def xto_hdf5(self, f, *args, **kwargs):
         """Store arrays in HDF5 file
