@@ -238,9 +238,8 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
         # histograms
         mx = da.max(downsamp)
-        mn = da.max(downsamp)
-        mx=mx.compute()
-        mn=mn.compute()
+        mn = da.min(downsamp)
+        dask.compute(mx, mn)
         h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
         self.to_hdf5(hdf5obj, imagepathout, downsamp)
         # need to fix this - will break on windows
@@ -257,7 +256,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
 
     def to_hdf5(self, hdfobj, path, daskarray):
-        hdl = hdfobj.create_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip")
+        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip")
         da.store(daskarray, hdl)
         
     def xto_hdf5(self, f, *args, **kwargs):
