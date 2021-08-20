@@ -72,8 +72,8 @@ def pyramid():
     dask.config.set(scheduler='single-threaded')
     if args.threads is not None:
         print("Setting threads to " + str(args.threads)) 
-        dask.config.set(scheduler='threaded')
-        dask.config.set(pool=ThreadPoolExecutor(args.threads))
+        dask.config.set(scheduler='threads')
+        #dask.config.set(pool=ThreadPoolExecutor(args.threads))
         
     sys.excepthook = exception_handler
 

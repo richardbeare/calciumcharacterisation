@@ -244,7 +244,6 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         self.to_hdf5(hdf5obj, imagepathout, downsamp)
         # need to fix this - will break on windows
         grouppath = posixpath.dirname(imagepathout)
-
         def mkAttr(XX):
             return np.frombuffer(str(XX).encode(), dtype='|S1')
         
@@ -253,10 +252,12 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
         hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
+        print("Histogram")
         self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
+        print("Done")
 
     def to_hdf5(self, hdfobj, path, daskarray):
-        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip")
+        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip", chunks=True)
         da.store(daskarray, hdl)
         
     def xto_hdf5(self, f, *args, **kwargs):
