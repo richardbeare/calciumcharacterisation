@@ -218,6 +218,10 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         return res
 
     def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
+        # Get the histogram details of the imagepathin
+        grouppathin = posixpath.dirname(imagepathin)
+        histpathin = posixpath.join(grouppathin, "Histogram")
+        histin = hdf5obj[histpathin][...]
         # Use whatever chunk size that imaris has used
         # Not sure this is perfect - sometimes there are some redundant
         # slices to pad out the chunk
@@ -237,11 +241,12 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
         downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
         # histograms
-        mx = da.max(downsamp)
-        mn = da.min(downsamp)
-        dask.compute(mx, mn)
-        h, bins = da.histogram(downsamp, bins=256, range=(mx, mx))
-        self.to_hdf5(hdf5obj, imagepathout, downsamp)
+        mx = downsamp.max()
+        mn = downsamp.min()
+        #dask.compute(mx, mn)
+        h, bins = da.histogram(downsamp, bins=histin.shape[0], range=(mx, mx))
+        h = h.astype(histin.dtype)
+        delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
         # need to fix this - will break on windows
         grouppath = posixpath.dirname(imagepathout)
         def mkAttr(XX):
@@ -253,12 +258,12 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
         hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
         print("Histogram")
-        self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
-        print("Done")
+        delayedstore2 = self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h, compute=False)
+        da.compute(delayedstore1, delayedstore2)
 
-    def to_hdf5(self, hdfobj, path, daskarray):
-        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, compression="gzip", chunks=True)
-        da.store(daskarray, hdl)
+    def to_hdf5(self, hdfobj, path, daskarray, compression=None, compute=True):
+        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, chunks=True, compression=compression)
+        return da.store(sources=daskarray, targets=hdl, compute=compute)
         
     def xto_hdf5(self, f, *args, **kwargs):
         """Store arrays in HDF5 file
