@@ -257,7 +257,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
         hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
-        print("Histogram")
+
         delayedstore2 = self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h, compute=False)
         da.compute(delayedstore1, delayedstore2)
 
