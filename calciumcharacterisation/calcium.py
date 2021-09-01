@@ -32,7 +32,8 @@ class LazyImarisTS:
         self.__imparams__()
         self._starttime = None
         self._sampletimes = None
-
+        self._mode = mode
+        
     def __del__(self):
         if self._file_object:
             self._file_object.close()
@@ -64,7 +65,7 @@ class LazyImarisTS:
         assert os.path.exists(filename_h5), "Error: HDF5 file not found"
         if self._file_object:
             self._file_object.close()
-        self._file_object = h5py.File(filename_imaris, 'r')
+        self._file_object = h5py.File(filename_imaris, self._mode)
 
     def GetChannels(self):
         channels = len(self._file_object['DataSet'].keys())
@@ -222,6 +223,12 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         grouppathin = posixpath.dirname(imagepathin)
         histpathin = posixpath.join(grouppathin, "Histogram")
         histin = hdf5obj[histpathin][...]
+        # need to fix this - will break on windows
+        grouppath = posixpath.dirname(imagepathout)
+        try:
+            hdf5obj.create_group(grouppath)
+        except:
+            print("group " + grouppath + " already exists")
         # Use whatever chunk size that imaris has used
         # Not sure this is perfect - sometimes there are some redundant
         # slices to pad out the chunk
@@ -241,29 +248,37 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
         downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
         # histograms
-        mx = downsamp.max()
-        mn = downsamp.min()
-        #dask.compute(mx, mn)
-        h, bins = da.histogram(downsamp, bins=histin.shape[0], range=(mx, mx))
-        h = h.astype(histin.dtype)
-        delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
-        # need to fix this - will break on windows
-        grouppath = posixpath.dirname(imagepathout)
+        mx = da.max(downsamp)
+        mn = da.min(downsamp)
+
         def mkAttr(XX):
             return np.frombuffer(str(XX).encode(), dtype='|S1')
-        
         hdf5obj[grouppath].attrs['ImageSizeX']= mkAttr(downsamp.shape[2])
         hdf5obj[grouppath].attrs['ImageSizeY']= mkAttr(downsamp.shape[1])
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
+        #self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip")
+        delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
+        #da.compute(delayedstore1)
+        #delayedstore2 = self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h, compute=False)
+        delayedstuff = da.compute({'mx': mx, 'mn': mn,
+                                   'ds1' : delayedstore1})
+        mx = delayedstuff['mx']
+        mn = delayedstuff['mn']
+        del delayedstuff
+        
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
         hdf5obj[grouppath].attrs['HistogramMax']= mkAttr(mx)
+        # Now iterate over the thing we just saved
+        h, bins = da.histogram(hdf5obj[imagepathout], bins=histin.shape[0], range=(mn, mx))
+        h = h.astype(histin.dtype)
+        self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h)
 
-        delayedstore2 = self.to_hdf5(hdf5obj, posixpath.join(grouppath, 'Histogram'), h, compute=False)
-        da.compute(delayedstore1, delayedstore2)
 
     def to_hdf5(self, hdfobj, path, daskarray, compression=None, compute=True):
-        hdl = hdfobj.require_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, chunks=True, compression=compression)
-        return da.store(sources=daskarray, targets=hdl, compute=compute)
+        print(path)
+        hdl = hdfobj.create_dataset( path, shape=daskarray.shape, dtype=daskarray.dtype, chunks=True, compression=compression)
+        print(hdl.dtype)
+        return da.store(sources=daskarray, targets=hdl, compute=compute, return_stored = False)
         
     def xto_hdf5(self, f, *args, **kwargs):
         """Store arrays in HDF5 file
@@ -335,6 +350,9 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
                 print(inpaths[idx])
                 pbar.register()
             self._subdivide(self._file_object, inpaths[idx], outpaths[idx])
+            self.close()
+            self.set_path(self._filename)
+            self.open()
             if not quiet:
                 pbar.unregister()
 
