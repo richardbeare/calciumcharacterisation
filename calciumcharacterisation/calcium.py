@@ -256,6 +256,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
 
         delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
+        delayedstore1.visualize("h.svg")
         mx, mn, ds1 = da.compute( mx,  mn, delayedstore1)
 
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
