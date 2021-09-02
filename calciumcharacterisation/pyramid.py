@@ -23,8 +23,8 @@ import dask
 import dask.multiprocessing
 import resource
 
-maxmem = 8 * 2**30
-resource.setrlimit(resource.RLIMIT_DATA, (maxmem, maxmem))
+#maxmem = 8 * 2**30
+#resource.setrlimit(resource.RLIMIT_DATA, (maxmem, maxmem))
 
 def exception_handler(exception_type, exception, traceback):
     # All your trace are belong to us!

@@ -187,7 +187,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
             else:
                 sigma += (2/3.0,)
                 
-        #print(daskchunk.shape)
+        print(daskchunk.shape)
         #print(sigma)
         smoothed = skif.gaussian(daskchunk, sigma, mode='reflect', cval = 0, preserve_range = True)
         smoothed = smoothed.astype(daskchunk.dtype)
@@ -206,6 +206,20 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         res = res.astype(img.dtype)
         return res
 
+    def myresize2(self, daskchunk, overlapdepth):
+        sigma=()
+        for k in range(len(self._subdiv)):
+            if self._subdiv[k] == 1:
+                sigma += (0,)
+            else:
+                sigma += (2/3.0,)
+                
+        smoothed = skif.gaussian(daskchunk, sigma, mode='nearest', cval = 0, preserve_range = True)
+        smoothed = da.chunk.trim(smoothed, overlapdepth)
+        smoothed = smoothed.astype(daskchunk.dtype)
+        smoothed = self.myresize(smoothed)
+        return smoothed
+        
     def chunkstuff(self, axislength, chunksize):
         # force chunk size to something decent
         # always use all slices
@@ -240,11 +254,15 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         subsamp = self._subdiv
         # imaris appears to do z,y,x - only subsample x and y...
         daskimg = da.from_array(hdf5obj[imagepathin], chunks=aa)
-        blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
+        #blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
         dz = tuple(np.ceil(np.array(aa[0])/float(subsamp[0])).astype(int))
         dy = tuple(np.ceil(np.array(aa[1])/float(subsamp[1])).astype(int))
         dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
-        downsamp = blurred.map_blocks(self.myresize, dtype = dtp, chunks = (dz, dy, dx))
+        downsamp = daskimg.map_overlap(self.myresize2, depth=(0, 6, 6),
+                                       boundary='reflect', dtype = dtp,
+                                       trim=False,
+                                       chunks=(dz, dy, dx),
+                                       overlapdepth=(0,6,6)) 
         # histograms
         mx = da.max(downsamp)
         mn = da.min(downsamp)
@@ -256,7 +274,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
 
         delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
-        delayedstore1.visualize("h.svg")
+        #delayedstore1.visualize("h.svg")
         mx, mn, ds1 = da.compute( mx,  mn, delayedstore1)
 
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
