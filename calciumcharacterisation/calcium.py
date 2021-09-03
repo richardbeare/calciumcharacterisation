@@ -179,47 +179,31 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
     def __init__(self, filename_imaris):
         super().__init__(filename_imaris, mode='r+')
 
-    def mysmoother(self, daskchunk):
+    def mysmoother(self, daskchunk, subdiv):
         sigma=()
-        for k in range(len(self._subdiv)):
-            if self._subdiv[k] == 1:
+        for k in range(len(subdiv)):
+            if subdiv[k] == 1:
                 sigma += (0,)
             else:
                 sigma += (2/3.0,)
                 
-        print(daskchunk.shape)
-        #print(sigma)
         smoothed = skif.gaussian(daskchunk, sigma, mode='reflect', cval = 0, preserve_range = True)
         smoothed = smoothed.astype(daskchunk.dtype)
         return smoothed
 
-    def myresize(self, img):
+    def myresize(self, img, subdiv):
         sh = img.shape
         slices = sh[0]
         rows = sh[1]
         cols = sh[2]
         
-        out_slices = np.ceil(slices/float(self._subdiv[0]))
-        out_rows = np.ceil(rows/float(self._subdiv[1]))
-        out_cols = np.ceil(cols/float(self._subdiv[2]))
+        out_slices = np.ceil(slices/float(subdiv[0]))
+        out_rows = np.ceil(rows/float(subdiv[1]))
+        out_cols = np.ceil(cols/float(subdiv[2]))
         res = ski.transform.resize(img, (out_slices, out_rows, out_cols), order = 0, preserve_range=True, mode = 'reflect', cval = 0)
         res = res.astype(img.dtype)
         return res
 
-    def myresize2(self, daskchunk, overlapdepth):
-        sigma=()
-        for k in range(len(self._subdiv)):
-            if self._subdiv[k] == 1:
-                sigma += (0,)
-            else:
-                sigma += (2/3.0,)
-                
-        smoothed = skif.gaussian(daskchunk, sigma, mode='nearest', cval = 0, preserve_range = True)
-        smoothed = da.chunk.trim(smoothed, overlapdepth)
-        smoothed = smoothed.astype(daskchunk.dtype)
-        smoothed = self.myresize(smoothed)
-        return smoothed
-        
     def chunkstuff(self, axislength, chunksize):
         # force chunk size to something decent
         # always use all slices
@@ -232,7 +216,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
            res = res  + (d,)
         return res
 
-    def _subdivide(self, hdf5obj, imagepathin, imagepathout=None):
+    def _subdivide(self, hdf5obj, subdiv, imagepathin, imagepathout=None):
         # Get the histogram details of the imagepathin
         grouppathin = posixpath.dirname(imagepathin)
         histpathin = posixpath.join(grouppathin, "Histogram")
@@ -247,25 +231,31 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         # Not sure this is perfect - sometimes there are some redundant
         # slices to pad out the chunk
         chunkshape = hdf5obj[imagepathin].chunks
-        print(chunkshape)
         imshape =  hdf5obj[imagepathin].shape
-        print(imshape)
         aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
         dtp =  hdf5obj[imagepathin].dtype
 
-        subsamp = self._subdiv
         # imaris appears to do z,y,x - only subsample x and y...
         daskimg = da.from_array(hdf5obj[imagepathin], chunks=aa)
-        #blurred = daskimg.map_overlap(self.mysmoother, depth=(0, 6, 6), boundary='reflect', dtype = dtp)
-        dz = tuple(np.ceil(np.array(aa[0])/float(subsamp[0])).astype(int))
-        dy = tuple(np.ceil(np.array(aa[1])/float(subsamp[1])).astype(int))
-        dx = tuple(np.ceil(np.array(aa[2])/float(subsamp[2])).astype(int))
-        downsamp = daskimg.map_overlap(self.myresize2, depth=(0, 6, 6),
-                                       boundary='reflect', dtype = dtp,
-                                       trim=False,
-                                       meta=np.array((),dtype=daskimg.dtype),
-                                       chunks=(dz, dy, dx),
-                                       overlapdepth=(0,6,6)) 
+        boundarydepth={0 : 0, 1 : 6, 1 : 6}
+
+        dz = tuple(np.ceil(np.array(aa[0])/float(subdiv[0])).astype(int))
+        dy = tuple(np.ceil(np.array(aa[1])/float(subdiv[1])).astype(int))
+        dx = tuple(np.ceil(np.array(aa[2])/float(subdiv[2])).astype(int))
+
+        overlaparrays = da.overlap.overlap(daskimg, depth = boundarydepth,
+                                           boundary='reflect')
+        smoothedoverlap = overlaparrays.map_blocks(self.mysmoother, subdiv=subdiv)
+        smoothednoverlap = da.overlap.trim_internal(smoothedoverlap, axes=boundarydepth)
+
+        downsamp = smoothednoverlap.map_blocks(self.myresize, chunks = (dz, dy, dx),
+                                               subdiv = subdiv)
+        #downsamp = daskimg.map_overlap(self.myresize2, depth=boundarydepth,
+        #                               boundary='reflect', dtype = dtp,
+        #                               trim=False,
+        #                               meta=np.array((),dtype=daskimg.dtype),
+        #                               chunks=(dz, dy, dx),
+        #                               overlapdepth=(0,6,6)) 
         # histograms
         mx = da.max(downsamp)
         mn = da.min(downsamp)
@@ -343,7 +333,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
             not have enough control over the sampling strategy for imaris files
         """
         # find all of the imaris datasets under the specified resolution group
-        self._subdiv = subdiv
+        #self._subdiv = subdiv
         datasetnames = list()
         resin = 'ResolutionLevel ' + str(resolution)
         resout =  'ResolutionLevel ' + str(resolution + 1)
@@ -361,7 +351,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
             if not quiet:
                 print(inpaths[idx])
                 pbar.register()
-            self._subdivide(self._file_object, inpaths[idx], outpaths[idx])
+            self._subdivide(self._file_object, subdiv=subdiv, imagepathin=inpaths[idx], imagepathout=outpaths[idx])
             # close and reopen to hopefully ensure cleanout of RAM
             self.close()
             self.set_path(self._filename)
