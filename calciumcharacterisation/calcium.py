@@ -247,7 +247,9 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         # Not sure this is perfect - sometimes there are some redundant
         # slices to pad out the chunk
         chunkshape = hdf5obj[imagepathin].chunks
+        print(chunkshape)
         imshape =  hdf5obj[imagepathin].shape
+        print(imshape)
         aa = ( tuple([imshape[0]]), self.chunkstuff(imshape[1], chunkshape[1]), self.chunkstuff(imshape[2], chunkshape[2]))
         dtp =  hdf5obj[imagepathin].dtype
 
@@ -261,6 +263,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         downsamp = daskimg.map_overlap(self.myresize2, depth=(0, 6, 6),
                                        boundary='reflect', dtype = dtp,
                                        trim=False,
+                                       meta=np.array((),dtype=daskimg.dtype),
                                        chunks=(dz, dy, dx),
                                        overlapdepth=(0,6,6)) 
         # histograms
@@ -274,7 +277,7 @@ class LazyImarisTSReaderWriter(LazyImarisTS):
         hdf5obj[grouppath].attrs['ImageSizeZ']= mkAttr(downsamp.shape[0])
 
         delayedstore1 = self.to_hdf5(hdf5obj, imagepathout, downsamp, compression="gzip", compute=False)
-        #delayedstore1.visualize("h.svg")
+        delayedstore1.visualize("h.svg")
         mx, mn, ds1 = da.compute( mx,  mn, delayedstore1)
 
         hdf5obj[grouppath].attrs['HistogramMin']= mkAttr(mn)
